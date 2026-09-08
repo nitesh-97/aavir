@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR 3D Viewer — Place Objects in Your World</title>
+
+  <!-- Model Viewer Web Component (Google) -->
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0b0d12;
+      --panel: #151923;
+      --panel-2: #1e2330;
+      --text: #e8ecf3;
+      --muted: #8a93a6;
+      --accent: #6c8cff;
+      --accent-2: #9b6cff;
+      --success: #3ddc97;
+      --danger: #ff5d6c;
+      --border: #262b3a;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 20% -10%, #1a2040 0%, var(--bg) 60%);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100%;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 18, 27, 0.7);
+      backdrop-filter: blur(10px);
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    header h1 span {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .badge {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+
+    main {
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Upload overlay */
+    .upload-area {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 5;
+    }
+
+    .upload-card {
+      width: 100%;
+      max-width: 520px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 32px 28px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .upload-card h2 {
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    .upload-card p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 22px;
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      padding: 36px 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--panel-2);
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent);
+      background: rgba(108, 140, 255, 0.08);
+      transform: translateY(-2px);
+    }
+
+    .dropzone svg {
+      width: 48px;
+      height: 48px;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .dropzone .label {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .dropzone .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .sample-btn {
+      margin-top: 16px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .sample-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    /* Viewer */
+    model-viewer {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      --poster-color: transparent;
+    }
+
+    model-viewer:not([src]) { display: none; }
+
+    .viewer-wrap {
+      position: absolute;
+      inset: 0;
+      display: none;
+    }
+
+    .viewer-wrap.active { display: block; }
+
+    /* Controls panel */
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      gap: 10px;
+      padding: 12px 14px;
+      background: rgba(21, 25, 35, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      align-items: center;
+      z-index: 10;
+      max-width: calc(100% - 32px);
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .controls.active { display: flex; }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+      border-right: 1px solid var(--border);
+    }
+
+    .ctrl-group:last-child { border-right: none; }
+
+    .ctrl-group label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input[type="range"] {
+      width: 100px;
+      accent-color: var(--accent);
+    }
+
+    .btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(108,140,255,0.35); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--accent);
+      box-shadow: none;
+    }
+
+    .btn-ar {
+      background: linear-gradient(135deg, #3ddc97, #2bb87a);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s;
+      z-index: 100;
+      max-width: 90%;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.error { border-color: var(--danger); color: var(--danger); }
+    .toast.success { border-color: var(--success); color: var(--success); }
+
+    /* Loading */
+    .loader {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      z-index: 20;
+    }
+
+    .loader.active { display: flex; }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* AR instructions modal */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+    }
+
+    .modal.active { display: flex; }
+
+    .modal-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .modal-card h3 { margin-bottom: 12px; }
+    .modal-card ul { margin: 12px 0; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .modal-card .close {
+      margin-top: 12px;
+      width: 100%;
+      padding: 10px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    @media (max-width: 600px) {
+      .ctrl-group { padding: 4px; border-right: none; }
+      input[type="range"] { width: 70px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🌐 <span>AR 3D Viewer</span></h1>
+      <div class="badge" id="deviceBadge">Detecting device…</div>
+    </header>
+
+    <main>
+      <!-- Upload overlay -->
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-card">
+          <h2>Upload a 3D Model</h2>
+          <p>Place it in your real world using AR</p>
+
+          <label for="fileInput" class="dropzone" id="dropzone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="label">Drop a file here or click to browse</div>
+            <div class="hint">Supported: GLB, GLTF, USDZ (max 50MB)</div>
+            <input type="file" id="fileInput" accept=".glb,.gltf,.usdz" hidden />
+          </label>
+
+          <button class="sample-btn" id="sampleBtn">Or try a sample model</button>
+        </div>
+      </div>
+
+      <!-- 3D Viewer -->
+      <div class="viewer-wrap" id="viewerWrap">
+        <model-viewer
+          id="viewer"
+          camera-controls
+          touch-action="pan-y"
+          auto-rotate
+          shadow-intensity="1"
+          environment-image="neutral"
+          exposure="1"
+          ar
+          ar-modes="webxr scene-viewer quick-look"
+          ar-placement="wall-and-floor"
+          ios-src=""
+        ></model-viewer>
+      </div>
+
+      <!-- Loader -->
+      <div class="loader" id="loader">
+        <div class="spinner"></div>
+        <div style="color: var(--muted); font-size: 13px;">Loading model…</div>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls" id="controls">
+        <div class="ctrl-group">
+          <label>Scale</label>
+          <input type="range" id="scaleSlider" min="0.1" max="3" step="0.05" value="1" />
+        </div>
+        <div class="ctrl-group">
+          <label>Rotate</label>
+          <input type="range" id="rotateSlider" min="0" max="360" step="1" value="0" />
+        </div>
+        <div class="ctrl-group">
+          <button class="btn btn-ghost" id="resetBtn">↺ Reset</button>
+          <button class="btn btn-ar" id="arBtn">📱 View in AR</button>
+          <button class="btn btn-ghost" id="newBtn">＋ New</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- AR Instructions Modal -->
+  <div class="modal" id="modal">
+    <div class="modal-card">
+      <h3>📱 How to use AR</h3>
+      <ul>
+        <li>Open this page on a <b>mobile device</b> (AR is not supported on desktop).</li>
+        <li>Tap <b>"View in AR"</b>.</li>
+        <li><b>Android:</b> Uses Google's Scene Viewer — point camera at a flat surface and tap to place.</li>
+        <li><b>iOS:</b> Uses AR Quick Look — point camera and tap to place.</li>
+        <li><b>Move:</b> Drag the object with one finger.</li>
+        <li><b>Rotate:</b> Use two fingers to rotate.</li>
+        <li><b>Scale:</b> Pinch with two fingers.</li>
+      </ul>
+      <button class="close" id="closeModal">Got it</button>
+    </div>
+  </div>
+
+  <script>
+    const fileInput   = document.getElementById('fileInput');
+    const dropzone    = document.getElementById('dropzone');
+    const uploadArea  = document.getElementById('uploadArea');
+    const viewerWrap  = document.getElementById('viewerWrap');
+    const viewer      = document.getElementById('viewer');
+    const loader      = document.getElementById('loader');
+    const controls    = document.getElementById('controls');
+    const scaleSlider = document.getElementById('scaleSlider');
+    const rotateSlider= document.getElementById('rotateSlider');
+    const resetBtn    = document.getElementById('resetBtn');
+    const arBtn       = document.getElementById('arBtn');
+    const newBtn      = document.getElementById('newBtn');
+    const sampleBtn   = document.getElementById('sampleBtn');
+    const toast       = document.getElementById('toast');
+    const modal       = document.getElementById('modal');
+    const closeModal  = document.getElementById('closeModal');
+    const deviceBadge = document.getElementById('deviceBadge');
+
+    // Detect device
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    deviceBadge.textContent = isMobile ? (isIOS ? '📱 iOS device' : '🤖 Android device') : '💻 Desktop';
+
+    // Toast helper
+    function showToast(msg, type = '') {
+      toast.textContent = msg;
+      toast.className = 'toast show ' + type;
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    // File validation
+    const ALLOWED_EXT = ['glb', 'gltf', 'usdz'];
+    const MAX_SIZE = 50 * 1024 * 1024;
+
+    function validateFile(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!ALLOWED_EXT.includes(ext)) {
+        showToast('❌ Unsupported format. Use GLB, GLTF, or USDZ.', 'error');
+        return false;
+      }
+      if (file.size > MAX_SIZE) {
+        showToast('❌ File too large. Max 50MB.', 'error');
+        return false;
+      }
+      return true;
+    }
+
+    // Load model from File
+    function loadModelFromFile(file) {
+      if (!validateFile(file)) return;
+      const url = URL.createObjectURL(file);
+      loadModel(url, file.name);
+    }
+
+    // Load model from URL
+    function loadModel(url, name = 'model') {
+      loader.classList.add('active');
+      uploadArea.style.display = 'none';
+      viewerWrap.classList.add('active');
+      controls.classList.add('active');
+
+      // Reset transforms
+      scaleSlider.value = 1;
+      rotateSlider.value = 0;
+      viewer.style.transform = 'scale(1) rotateY(0deg)';
+      viewer.setAttribute('camera-orbit', '0deg 75deg 2.5m');
+
+      viewer.src = url;
+
+      // iOS AR Quick Look needs USDZ
+      if (isIOS && url.toLowerCase().endsWith('.usdz')) {
+        viewer.setAttribute('ios-src', url);
+      } else {
+        viewer.removeAttribute('ios-src');
+      }
+
+      viewer.addEventListener('load', () => {
+        loader.classList.remove('active');
+        showToast('✅ ' + name + ' loaded', 'success');
+      }, { once: true });
+
+      viewer.addEventListener('error', () => {
+        loader.classList.remove('active');
+        showToast('❌ Failed to load model', 'error');
+      }, { once: true });
+    }
+
+    // Drag & drop
+    ['dragenter', 'dragover'].forEach(ev =>
+      dropzone.addEventListener(ev, e => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      })
+    );
+    ['dragleave', 'drop'].forEach(ev =>
+      dropzone.addEventListener(ev, e => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      })
+    );
+    dropzone.addEventListener('drop', e => {
+      const file = e.dataTransfer.files[0];
+      if (file) loadModelFromFile(file);
+    });
+
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) loadModelFromFile(file);
+    });
+
+    // Sample model (Astronaut from model-viewer docs)
+    sampleBtn.addEventListener('click', () => {
+      loadModel(
+        'https://modelviewer.dev/shared-assets/models/Astronaut.glb',
+        'Astronaut.glb (sample)'
+      );
+    });
+
+    // Scale slider
+    scaleSlider.addEventListener('input', e => {
+      const s = e.target.value;
+      viewer.style.transform = `scale(${s}) rotateY(${rotateSlider.value}deg)`;
+    });
+
+    // Rotate slider
+    rotateSlider.addEventListener('input', e => {
+      const r = e.target.value;
+      viewer.style.transform = `scale(${scaleSlider.value}) rotateY(${r}deg)`;
+    });
+
+    // Reset
+    resetBtn.addEventListener('click', () => {
+      scaleSlider.value = 1;
+      rotateSlider.value = 0;
+      viewer.style.transform = 'scale(1) rotateY(0deg)';
+      viewer.cameraOrbit = '0deg 75deg 2.5m';
+      viewer.fieldOfView = 'auto';
+    });
+
+    // AR button
+    arBtn.addEventListener('click', () => {
+      if (!isMobile) {
+        modal.classList.add('active');
+        return;
+      }
+      // Activate AR mode via model-viewer API
+      if (viewer.canActivateAR) {
+        viewer.activateAR();
+      } else {
+        showToast('⚠️ AR not supported on this browser', 'error');
+      }
+    });
+
+    closeModal.addEventListener('click', () => modal.classList.remove('active'));
+
+    // New model
+    newBtn.addEventListener('click', () => {
+      viewer.removeAttribute('src');
+      viewer.removeAttribute('ios-src');
+      viewerWrap.classList.remove('active');
+      controls.classList.remove('active');
+      uploadArea.style.display = 'flex';
+      fileInput.value = '';
+    });
+  </script>
+</body>
+</html>
