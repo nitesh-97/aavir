@@ -8,21 +8,36 @@ Sellers upload a `.glb`, define the filament colours and print sizes they offer,
 
 ## Quick start
 
+The app talks to Postgres (Neon) and Vercel Blob, so local development borrows
+the deployment's credentials rather than running its own services.
+
 ```bash
 npm install
 ```
 
+Pull the environment down from Vercel. Prisma's CLI reads `.env` specifically,
+not `.env.local`, so write it there:
+
+```bash
+npx vercel env pull .env
+```
+
+Add `AUTH_SECRET` to `.env` if it is not already set in the Vercel project —
+see [Environment](#environment). Then create the schema and load the demo
+catalogue of seven listings:
+
 ```bash
 npm run setup
 ```
-
-`setup` generates the Prisma client, creates the SQLite database and loads a demo catalogue of seven listings.
 
 ```bash
 npm run dev
 ```
 
 Open <http://localhost:3000>. The seeded shop signs in with **`demo@aavir.test` / `demo1234`**.
+
+> Local dev points at the same Neon database as the deployment. To keep them
+> apart, create a Neon branch and use its connection string in `.env`.
 
 ### Trying AR on a real phone
 
@@ -82,7 +97,8 @@ src/
       auth/{register,login,logout}
       listings/                 GET list, POST create
       listings/[id]/            GET, PATCH, DELETE (owner only)
-      upload/                   Multipart file intake
+      upload/                   Multipart intake (local dev)
+      upload/blob/              Scoped token for browser-direct Blob upload
   components/
     ModelPreview.tsx            three.js turntable viewer
     ArLauncher.tsx              WebXR session, hit-test, gestures, overlay UI
@@ -93,7 +109,7 @@ src/
     three/model.ts              Loading, re-anchoring, measuring, tinting
     three/thumbnailer.ts        Shared single-context thumbnail renderer
     auth.ts                     JWT session cookie + bcrypt
-    storage.ts                  File storage driver
+    storage.ts                  Upload validation + local-disk driver
 prisma/
   schema.prisma                 User, Listing, ColorOption, SizeOption
   seed.ts                       Demo catalogue
@@ -101,7 +117,7 @@ legacy/
   ar-viewer.html                The original single-file model-viewer prototype
 ```
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · three.js · Prisma + SQLite.
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · three.js · Prisma + Postgres (Neon) · Vercel Blob.
 
 ### Colour rendering
 
@@ -113,33 +129,56 @@ The seller form captures a frame of the live preview at publish time and uploads
 
 ---
 
-## Deploying
+## Deploying (Vercel)
 
-Two things need changing before this runs on a real host.
+The project targets Vercel with Neon Postgres and Vercel Blob. Three pieces of
+setup, all in the Vercel dashboard:
 
-**1. Database.** SQLite is a local file. Point Prisma at Postgres:
+**1. Database.** Storage → Create Database → Neon. It injects `DATABASE_URL`
+and `DATABASE_URL_UNPOOLED` into the project automatically. Then create the
+tables once, from your machine:
 
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+```bash
+npx vercel env pull .env && npm run setup
 ```
 
-Then `npx prisma db push`. No model changes are needed.
+**2. Blob storage.** Storage → Create → Blob. It injects
+`BLOB_READ_WRITE_TOKEN`. Nothing else to configure — the app switches to
+browser-direct uploads as soon as that variable is present.
 
-**2. File storage.** `src/lib/storage.ts` writes to `public/uploads`, which does not survive on Vercel, Netlify or most containers — their filesystems are ephemeral or read-only. Replace the body of `saveUpload` with an S3 / R2 / Supabase Storage put that returns a public URL. Nothing else in the app touches the filesystem.
+**3. `AUTH_SECRET`.** Settings → Environment Variables. This one is *not*
+injected for you, and the app cannot start without it: the root layout reads
+the session on every request, so an unset value returns 500 on every page, not
+just the seller ones.
 
-Also set a real `AUTH_SECRET` (a long random string). The `.env` in this repo has a development placeholder.
+```bash
+openssl rand -base64 32
+```
 
-`.github/workflows/static.yml` is disabled: GitHub Pages serves static files only and cannot run API routes, uploads or a database.
+### Why uploads bypass the API route
+
+Vercel caps serverless request bodies at **4.5 MB**. Print models routinely
+exceed that, so a 50 MB `.glb` could never travel through `/api/upload`.
+Instead `/api/upload/blob` issues a short-lived scoped token and the browser
+uploads straight to Blob storage, with multipart and retry for files over 8 MB.
+That token route is the only authorisation checkpoint in the flow, so it checks
+the session and the file extension before issuing anything.
+
+Locally, with no `BLOB_READ_WRITE_TOKEN`, the same form falls back to posting
+multipart to `/api/upload`, which writes into `public/uploads`. The two paths
+share their validation rules in `src/lib/storage.ts` so they cannot drift.
+
+`.github/workflows/static.yml` is disabled: GitHub Pages serves static files
+only and cannot run API routes, uploads or a database.
 
 ### Environment
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | Prisma connection string. Defaults to `file:./dev.db`. |
-| `AUTH_SECRET` | Signs the session JWT. **Change before deploying.** |
+| Variable | Injected by | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Neon integration | Pooled Postgres connection, used at runtime. |
+| `DATABASE_URL_UNPOOLED` | Neon integration | Direct connection for `prisma db push`; DDL through a pooler is unreliable. |
+| `BLOB_READ_WRITE_TOKEN` | Blob integration | Presence of this switches uploads to browser-direct Blob. |
+| `AUTH_SECRET` | **you** | Signs the session JWT. Required — every page fails without it. |
 
 ---
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { listingInclude, toListingDTO } from "@/lib/serialize";
 import { ListingForm } from "@/components/ListingForm";
+import { uploadMode } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function EditListingPage({ params }: Props) {
   return (
     <div>
       <h1 className="mb-8 text-2xl font-bold">Edit listing</h1>
-      <ListingForm existing={toListingDTO(listing)} />
+      <ListingForm existing={toListingDTO(listing)} uploadMode={uploadMode()} />
     </div>
   );
 }

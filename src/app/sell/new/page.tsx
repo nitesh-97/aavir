@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { ListingForm } from "@/components/ListingForm";
+import { uploadMode } from "@/lib/storage";
 
 export const metadata = { title: "Upload a print — Aavir" };
 
@@ -14,7 +15,7 @@ export default async function NewListingPage() {
         The model is measured in the browser, so the sizes you set here are the real
         centimetres buyers will see standing on their floor.
       </p>
-      <ListingForm />
+      <ListingForm uploadMode={uploadMode()} />
     </div>
   );
 }

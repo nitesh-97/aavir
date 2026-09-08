@@ -20,7 +20,12 @@ export default async function BrowsePage({ searchParams }: Props) {
       published: true,
       ...(activeCategory !== "All" ? { category: activeCategory } : {}),
       ...(query
-        ? { OR: [{ title: { contains: query } }, { description: { contains: query } }] }
+        ? {
+            OR: [
+              { title: { contains: query, mode: "insensitive" as const } },
+              { description: { contains: query, mode: "insensitive" as const } },
+            ],
+          }
         : {}),
     },
     include: listingInclude,

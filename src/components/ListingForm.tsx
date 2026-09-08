@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 import { ModelPreview } from "./ModelPreview";
 import { CATEGORIES, MATERIALS, type ListingDTO } from "@/lib/types";
 import type { Dimensions } from "@/lib/three/model";
+import type { UploadKind, UploadMode } from "@/lib/storage";
 
 type ColorDraft = {
   key: string;
@@ -36,7 +38,21 @@ const DEFAULT_SIZES: SizeDraft[] = [
   { key: newKey(), label: "Large", scale: "1.5", priceDelta: "450" },
 ];
 
-async function uploadFile(file: File, kind: "model" | "usdz" | "image") {
+async function uploadFile(file: File, kind: UploadKind, mode: UploadMode) {
+  if (mode === "blob") {
+    // Straight from the browser to Blob storage: a serverless function could
+    // not accept a 50 MB body. Multipart splits large models into parallel
+    // parts and retries the ones that fail.
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+    const blob = await upload(`${kind}s/${safeName}`, file, {
+      access: "public",
+      handleUploadUrl: "/api/upload/blob",
+      clientPayload: kind,
+      multipart: file.size > 8 * 1024 * 1024,
+    });
+    return blob.url;
+  }
+
   const body = new FormData();
   body.append("file", file);
   body.append("kind", kind);
@@ -47,7 +63,13 @@ async function uploadFile(file: File, kind: "model" | "usdz" | "image") {
   return json.url as string;
 }
 
-export function ListingForm({ existing }: { existing?: ListingDTO }) {
+export function ListingForm({
+  existing,
+  uploadMode,
+}: {
+  existing?: ListingDTO;
+  uploadMode: UploadMode;
+}) {
   const router = useRouter();
   const isEdit = Boolean(existing);
 
@@ -125,7 +147,7 @@ export function ListingForm({ existing }: { existing?: ListingDTO }) {
     setError(null);
     setUploading(true);
     try {
-      const url = await uploadFile(file, "model");
+      const url = await uploadFile(file, "model", uploadMode);
       setModelUrl(url);
       setModelName(file.name);
       if (!title) setTitle(file.name.replace(/\.(glb|gltf)$/i, "").replace(/[-_]/g, " "));
@@ -145,7 +167,7 @@ export function ListingForm({ existing }: { existing?: ListingDTO }) {
     setError(null);
     setUploading(true);
     try {
-      setUsdzUrl(await uploadFile(file, "usdz"));
+      setUsdzUrl(await uploadFile(file, "usdz", uploadMode));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Upload failed.");
     } finally {
@@ -161,7 +183,7 @@ export function ListingForm({ existing }: { existing?: ListingDTO }) {
     try {
       const blob = await (await fetch(dataUrl)).blob();
       const file = new File([blob], "poster.png", { type: "image/png" });
-      const url = await uploadFile(file, "image");
+      const url = await uploadFile(file, "image", uploadMode);
       setPosterUrl(url);
       return url;
     } catch {

@@ -1,16 +1,21 @@
 // Aavir 2.0 — marketplace for 3D prints with AR try-in-your-room.
 //
-// SQLite keeps local setup to zero steps. To move to Postgres, change the
-// datasource provider/url below and re-run `prisma db push` — no model changes
-// are required.
+// Postgres (Neon, provisioned through Vercel). Both connection strings are
+// injected automatically by the Vercel Neon integration:
+//   DATABASE_URL          — pooled, used at runtime
+//   DATABASE_URL_UNPOOLED — direct, used by `prisma db push` and migrations,
+//                           which do not work reliably through a pooler
+// If you are not using that integration, set DATABASE_URL_UNPOOLED to the same
+// value as DATABASE_URL.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 model User {
