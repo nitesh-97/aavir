@@ -1,0 +1,95 @@
+// Aavir 2.0 — marketplace for 3D prints with AR try-in-your-room.
+//
+// SQLite keeps local setup to zero steps. To move to Postgres, change the
+// datasource provider/url below and re-run `prisma db push` — no model changes
+// are required.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String
+  isSeller     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  listings     Listing[]
+}
+
+model Listing {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  category    String   @default("Decor")
+  material    String   @default("PLA")
+
+  /// Absolute URL or app-relative path (e.g. /uploads/abc.glb) to the glTF binary.
+  modelUrl    String
+  /// Optional .usdz twin. Required for AR on iOS, which has no WebXR.
+  usdzUrl     String?
+  /// Optional still image used as the grid thumbnail.
+  posterUrl   String?
+
+  /// Price before any colour/size adjustment.
+  basePrice   Float
+  currency    String   @default("INR")
+
+  /// Real-world bounding box of the model at scale 1.0, in centimetres.
+  /// Measured in the browser at upload time so AR can report true dimensions.
+  baseWidthCm  Float?
+  baseHeightCm Float?
+  baseDepthCm  Float?
+
+  published   Boolean  @default(true)
+
+  sellerId    String
+  seller      User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  colors      ColorOption[]
+  sizes       SizeOption[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sellerId])
+  @@index([category])
+}
+
+/// A filament/resin colour the buyer can preview. `useOriginal` keeps the
+/// model's authored materials instead of tinting them.
+model ColorOption {
+  id          String  @id @default(cuid())
+  name        String
+  hex         String  @default("#cccccc")
+  useOriginal Boolean @default(false)
+  priceDelta  Float   @default(0)
+  position    Int     @default(0)
+
+  listingId   String
+  listing     Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+}
+
+/// A print size. `scale` multiplies the model's authored dimensions, so the
+/// same glb drives every size the seller offers.
+model SizeOption {
+  id         String  @id @default(cuid())
+  label      String
+  scale      Float   @default(1)
+  priceDelta Float   @default(0)
+  position   Int     @default(0)
+
+  listingId  String
+  listing    Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+}
