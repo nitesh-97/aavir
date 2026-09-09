@@ -47,6 +47,7 @@ export function QuickLookButton({ listing, colorHex, colorName, sizeScale }: Pro
         colorHex,
         sizeScale,
         baseHeightCm: listing.baseHeightCm,
+        material: listing.material,
       })
         .then((blob) => {
           if (cancelled) return;
@@ -74,7 +75,14 @@ export function QuickLookButton({ listing, colorHex, colorName, sizeScale }: Pro
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [listing.modelUrl, listing.usdzUrl, listing.baseHeightCm, colorHex, sizeScale]);
+  }, [
+    listing.modelUrl,
+    listing.usdzUrl,
+    listing.baseHeightCm,
+    listing.material,
+    colorHex,
+    sizeScale,
+  ]);
 
   // Release the last URL when the component goes away.
   useEffect(

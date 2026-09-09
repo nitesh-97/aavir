@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { DEFAULT_FINISH, type PrintFinish } from "./finishes";
 
 // Google's hosted decoder, the same one three's own examples use. Draco- and
 // meshopt-compressed glb files are common exports from Blender and Thingiverse.
@@ -97,11 +98,17 @@ function prepareMaterials(root: THREE.Object3D) {
  * Tint every material to a filament colour, or pass null to restore the
  * model's authored materials.
  *
- * A tint also flattens the finish towards matte, because that is what an FDM
- * print in a single filament actually looks like — a glossy authored material
- * recoloured "Matte Black" would otherwise read as painted plastic.
+ * A tint also replaces the surface finish, because that is what an FDM print in
+ * a single filament actually looks like — a glossy authored material recoloured
+ * "Matte Black" would otherwise read as painted plastic. The finish comes from
+ * the listing's material, so resin reads smooth and wood-fill reads chalky
+ * instead of everything sharing one arbitrary roughness.
  */
-export function applyColor(root: THREE.Object3D, hex: string | null) {
+export function applyColor(
+  root: THREE.Object3D,
+  hex: string | null,
+  finish: PrintFinish = DEFAULT_FINISH,
+) {
   eachMaterial(root, (material) => {
     if (!isColorMaterial(material)) return;
     const original = snapshots.get(material);
@@ -114,8 +121,8 @@ export function applyColor(root: THREE.Object3D, hex: string | null) {
       }
     } else {
       material.color.set(hex);
-      material.roughness = 0.72;
-      material.metalness = 0;
+      material.roughness = finish.roughness;
+      material.metalness = finish.metalness;
     }
     material.needsUpdate = true;
   });

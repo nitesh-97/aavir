@@ -3,7 +3,10 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { ThreeMFLoader } from "three/examples/jsm/loaders/3MFLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import {
+  mergeVertices,
+  toCreasedNormals,
+} from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 /**
  * Converts the formats print sellers actually own into glb, in their browser.
@@ -43,6 +46,13 @@ export const MAX_SOURCE_BYTES = 250 * 1024 * 1024;
  */
 const MM_TO_M = 0.001;
 
+/**
+ * Edges meeting at a sharper angle than this stay hard; anything shallower is
+ * smoothed. 35 degrees keeps chamfers, bevels and box corners crisp while
+ * letting a coarsely tessellated curve read as curved rather than faceted.
+ */
+const CREASE_ANGLE_RADIANS = (35 * Math.PI) / 180;
+
 export class ConversionError extends Error {}
 
 export function extensionOf(filename: string) {
@@ -66,19 +76,45 @@ function printMaterial() {
   });
 }
 
-function meshFromGeometry(geometry: THREE.BufferGeometry) {
-  let merged = geometry;
+/**
+ * Rebuilds normals for a mesh format that has no useful ones.
+ *
+ * STL is unindexed triangle soup carrying one flat normal per triangle, which
+ * is why an STL of a curved object renders visibly faceted. Discarding those
+ * normals first lets mergeVertices weld purely by position and recover the real
+ * topology; toCreasedNormals then decides smooth versus hard per edge by angle.
+ * Doing it in that order matters — merging while the flat normals are still
+ * attached would weld nothing, since no two of them agree.
+ */
+function rebuildNormals(geometry: THREE.BufferGeometry) {
+  let working = geometry;
+  working.deleteAttribute("normal");
+
   try {
-    // STL is unindexed triangle soup. mergeVertices compares normals as well
-    // as positions, so coplanar duplicates collapse while genuinely sharp
-    // edges keep their split normals — it dedupes without rounding corners.
-    merged = mergeVertices(geometry);
-    if (merged !== geometry) geometry.dispose();
+    const merged = mergeVertices(working);
+    if (merged !== working) {
+      working.dispose();
+      working = merged;
+    }
   } catch {
-    // Some exotic attribute layout; the unmerged geometry is still valid.
-    merged = geometry;
+    // An exotic attribute layout; the unmerged geometry is still valid.
   }
-  return new THREE.Mesh(merged, printMaterial());
+
+  try {
+    const creased = toCreasedNormals(working, CREASE_ANGLE_RADIANS);
+    if (creased !== working) {
+      working.dispose();
+      working = creased;
+    }
+  } catch {
+    working.computeVertexNormals();
+  }
+
+  return working;
+}
+
+function meshFromGeometry(geometry: THREE.BufferGeometry) {
+  return new THREE.Mesh(rebuildNormals(geometry), printMaterial());
 }
 
 /**
@@ -167,7 +203,14 @@ export async function convertToGlb(file: File): Promise<File> {
 
   let meshCount = 0;
   root.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) meshCount += 1;
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    meshCount += 1;
+    // OBJ and 3MF may carry authored normals, which are respected. Only a mesh
+    // arriving without any gets them rebuilt.
+    if (ext !== ".stl" && !mesh.geometry.getAttribute("normal")) {
+      mesh.geometry = rebuildNormals(mesh.geometry);
+    }
   });
   if (meshCount === 0) {
     disposeTree(root);

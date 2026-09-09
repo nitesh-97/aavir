@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { USDZExporter } from "three/examples/jsm/exporters/USDZExporter.js";
 import { applyColor, loadModel } from "./model";
+import { finishFor } from "./finishes";
 
 /**
  * Builds a USDZ in the browser so iOS can open it in AR Quick Look.
@@ -21,12 +22,15 @@ export type UsdzRequest = {
   sizeScale: number;
   /** The listing's real height at 1x, in centimetres, if it is known. */
   baseHeightCm: number | null;
+  /** Print material, which decides the surface finish baked into the USDZ. */
+  material: string;
 };
 
 export function usdzCacheKey(request: UsdzRequest) {
   return [
     request.modelUrl,
     request.colorHex ?? "original",
+    request.material,
     request.sizeScale,
     request.baseHeightCm ?? "unmeasured",
   ].join("|");
@@ -36,7 +40,7 @@ export async function buildUsdz(request: UsdzRequest): Promise<Blob> {
   const model = await loadModel(request.modelUrl);
 
   try {
-    applyColor(model.object, request.colorHex);
+    applyColor(model.object, request.colorHex, finishFor(request.material));
 
     // USDZExporter wires the base-colour texture straight into diffuseColor and
     // ignores material.color, so on a textured model the chosen filament would

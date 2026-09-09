@@ -158,6 +158,7 @@ src/
     three/thumbnailer.ts        Shared single-context thumbnail renderer
     three/usdz.ts               In-browser USDZ export for iOS Quick Look
     three/convert.ts            STL / OBJ / 3MF -> glb, in the browser
+    three/finishes.ts           Per-material PBR surface finishes
     auth.ts                     JWT session cookie + bcrypt
     storage.ts                  Upload validation + local-disk driver
 prisma/
@@ -172,6 +173,31 @@ legacy/
 ### Colour rendering
 
 Applying a colour clones the model's materials, tints every one, and pushes the finish toward matte (`roughness 0.72`, `metalness 0`) — because an FDM print in one filament is matte, and a glossy authored material recoloured "Matte Black" would read as painted plastic. Sellers can offer an **As-is** option that keeps the authored materials untouched.
+
+### Why uploads can look flat, and what fixes it
+
+An STL or OBJ carries no material data at all — only triangles. So a converted
+upload starts as one flat white material at uniform roughness, which gives light
+nothing to vary across, next to an authored PBR asset with base-colour, normal,
+roughness and occlusion maps. Three things narrow that gap:
+
+- **Crease-angle normals** (`src/lib/three/convert.ts`). STL stores one flat
+  normal per triangle, so curves render faceted. Normals are discarded, vertices
+  welded by position, then rebuilt with a 35° crease threshold — curves smooth,
+  real edges stay sharp.
+- **Print finishes** (`src/lib/three/finishes.ts`). Every listing already
+  records its material, and the renderer used to ignore it. Now resin reads
+  smooth, wood-fill chalky, silk PLA pearlescent. Applied wherever colour is,
+  so it reaches the preview *and* the exported USDZ.
+- **Ambient occlusion** (`GTAOPass` in `ModelPreview`). Contact shading is most
+  of what makes an untextured print read as solid rather than as a silhouette.
+  Preview only — iOS Quick Look renders the USDZ itself, so post-processing
+  cannot follow it there.
+
+**What still can't be fixed by rendering:** a model exported as a *build plate*
+— several copies laid out side by side — will be framed as one wide object,
+because that is genuinely what the file contains. A listing should be a single
+model, oriented upright, centred near the origin.
 
 ### Thumbnails
 

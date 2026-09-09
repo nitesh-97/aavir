@@ -46,6 +46,7 @@ export function ProductExperience({ listing }: { listing: ListingDTO }) {
         <ModelPreview
           src={listing.modelUrl}
           colorHex={color?.useOriginal ? null : (color?.hex ?? null)}
+          material={listing.material}
           scale={unitScale * (size?.scale ?? 1)}
           frameScale={unitScale * frameScale}
           onMeasured={setMeasured}

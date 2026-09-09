@@ -331,6 +331,7 @@ export function ListingForm({
               <ModelPreview
                 src={modelUrl}
                 colorHex={previewColor?.useOriginal ? null : (previewColor?.hex ?? null)}
+                material={material}
                 scale={correction * previewScale}
                 frameScale={correction * frameScale}
                 captureRef={captureRef}

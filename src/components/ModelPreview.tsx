@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { applyColor, loadModel, type Dimensions, type LoadedModel } from "@/lib/three/model";
+import { finishFor } from "@/lib/three/finishes";
 
 type Props = {
   src: string;
@@ -12,6 +17,8 @@ type Props = {
   colorHex: string | null;
   /** Multiplier applied to the model's authored dimensions. */
   scale: number;
+  /** Print material, which decides the surface finish (roughness, metalness). */
+  material?: string;
   /**
    * The largest scale the viewer can select. The camera is framed once for
    * this, so switching between sizes actually looks like a size change instead
@@ -19,6 +26,12 @@ type Props = {
    */
   frameScale?: number;
   autoRotate?: boolean;
+  /**
+   * Screen-space ambient occlusion. Worth the GPU cost on a product page, where
+   * contact shading is most of what makes an untextured print read as a solid
+   * object rather than a flat silhouette.
+   */
+  ambientOcclusion?: boolean;
   className?: string;
   onMeasured?: (sizeCm: Dimensions) => void;
   /**
@@ -33,8 +46,10 @@ export function ModelPreview({
   src,
   colorHex,
   scale,
+  material,
   frameScale,
   autoRotate = true,
+  ambientOcclusion = true,
   className,
   onMeasured,
   captureRef,
@@ -101,6 +116,30 @@ export function ModelPreview({
     controls.maxPolarAngle = Math.PI * 0.495;
     controlsRef.current = controls;
 
+    // Ambient occlusion darkens creases and contact points. Screen-space radius
+    // keeps it consistent whether the print is 3 cm or 40 cm, since listings
+    // vary hugely in real-world scale.
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    let gtao: GTAOPass | null = null;
+    if (ambientOcclusion) {
+      gtao = new GTAOPass(scene, camera, 1, 1);
+      gtao.updateGtaoMaterial({
+        screenSpaceRadius: true,
+        radius: 0.25,
+        distanceExponent: 1,
+        thickness: 1,
+        scale: 1,
+        samples: 16,
+      });
+      gtao.blendIntensity = 0.9;
+      composer.addPass(gtao);
+    }
+    // Tone mapping and colour-space conversion are skipped when rendering into
+    // a render target, so the final pass has to do them.
+    composer.addPass(new OutputPass());
+
     /** Fit the camera and the shadow frustum around a model of this size. */
     frameRef.current = (sizeM, framingScale) => {
       const width = sizeM.width * framingScale;
@@ -136,6 +175,7 @@ export function ModelPreview({
       const { clientWidth, clientHeight } = canvas;
       if (!clientWidth || !clientHeight) return;
       renderer.setSize(clientWidth, clientHeight, false);
+      composer.setSize(clientWidth, clientHeight);
       camera.aspect = clientWidth / clientHeight;
       camera.updateProjectionMatrix();
     };
@@ -145,7 +185,7 @@ export function ModelPreview({
 
     renderer.setAnimationLoop(() => {
       controls.update();
-      renderer.render(scene, camera);
+      composer.render();
     });
 
     if (captureRef) {
@@ -153,7 +193,7 @@ export function ModelPreview({
       // same synchronous block.
       captureRef.current = () => {
         if (!modelRef.current) return null;
-        renderer.render(scene, camera);
+        composer.render();
         try {
           return canvas.toDataURL("image/png");
         } catch {
@@ -166,6 +206,8 @@ export function ModelPreview({
       renderer.setAnimationLoop(null);
       observer.disconnect();
       controls.dispose();
+      gtao?.dispose();
+      composer.dispose();
       environment.dispose();
       pmrem.dispose();
       floor.geometry.dispose();
@@ -224,8 +266,8 @@ export function ModelPreview({
 
   // ---- Reactive props ----
   useEffect(() => {
-    if (modelRef.current) applyColor(modelRef.current.object, colorHex);
-  }, [colorHex, status]);
+    if (modelRef.current) applyColor(modelRef.current.object, colorHex, finishFor(material));
+  }, [colorHex, material, status]);
 
   useEffect(() => {
     modelRef.current?.object.scale.setScalar(scale);

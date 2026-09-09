@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { XREstimatedLight } from "three/examples/jsm/webxr/XREstimatedLight.js";
 import { applyColor, loadModel, type LoadedModel } from "@/lib/three/model";
+import { finishFor } from "@/lib/three/finishes";
 import { QuickLookButton } from "./QuickLookButton";
 import {
   formatDimensions,
@@ -66,8 +67,8 @@ export function ArLauncher({ listing, color, size, onColorChange, onSizeChange }
 
   // ---- Live edits to the placed object ----
   useEffect(() => {
-    if (modelRef.current) applyColor(modelRef.current.object, colorHex);
-  }, [colorHex, phase]);
+    if (modelRef.current) applyColor(modelRef.current.object, colorHex, finishFor(listing.material));
+  }, [colorHex, listing.material, phase]);
 
   useEffect(() => {
     const model = modelRef.current;
@@ -328,7 +329,7 @@ export function ArLauncher({ listing, color, size, onColorChange, onSizeChange }
       modelRef.current = model;
       unitScaleRef.current = unitScaleFor(listing, model.sizeCm.height);
 
-      applyColor(model.object, color.useOriginal ? null : color.hex);
+      applyColor(model.object, color.useOriginal ? null : color.hex, finishFor(listing.material));
       const effective = unitScaleRef.current * size.scale;
       model.object.scale.setScalar(effective);
       group.add(model.object);
