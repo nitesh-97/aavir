@@ -65,8 +65,25 @@ async function uploadFile(file: File, kind: UploadKind, mode: UploadMode) {
   body.append("kind", kind);
 
   const response = await fetch("/api/upload", { method: "POST", body });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(json.error ?? "Upload failed.");
+  const json = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    if (json?.error) throw new Error(json.error);
+
+    // A body this route never produced. Serverless hosts cap request bodies
+    // (4.5 MB on Vercel) and reject larger ones at the edge, before any of this
+    // app runs — so the reply is not JSON and there is no error field to read.
+    const megabytes = (file.size / 1024 / 1024).toFixed(1);
+    if (response.status === 413) {
+      throw new Error(
+        `That model is ${megabytes} MB, and this deployment can only accept about 4.5 MB ` +
+          "through an upload route. Configure Blob storage (BLOB_READ_WRITE_TOKEN) so files " +
+          "go straight from the browser to storage and skip that limit.",
+      );
+    }
+    throw new Error(`Upload failed with HTTP ${response.status} (${megabytes} MB file).`);
+  }
+
   return json.url as string;
 }
 
