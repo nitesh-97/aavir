@@ -51,7 +51,16 @@ export function isUploadKind(value: string): value is UploadKind {
 
 export class UploadError extends Error {}
 
-/** True when Vercel Blob credentials are present, i.e. on Vercel. */
+/**
+ * True when client-direct Blob uploads are possible.
+ *
+ * Deliberately checks the static token rather than any credential: Vercel's
+ * Blob integration now authenticates over OIDC (BLOB_STORE_ID plus the
+ * injected VERCEL_OIDC_TOKEN), which is enough for a server-side put() but not
+ * for `handleUpload`, whose token minting accepts only BLOB_READ_WRITE_TOKEN.
+ * Since every upload here is client-direct — models exceed the 4.5 MB
+ * serverless body cap — the static token is the real requirement.
+ */
 export function isBlobConfigured() {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
@@ -100,6 +109,17 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
  * read-only at runtime, so this would fail there with EROFS.
  */
 export async function saveUpload(file: File, kind: UploadKind): Promise<string> {
+  // Writing to disk on Vercel fails with EROFS. Say why, rather than letting a
+  // filesystem error surface from three frames down.
+  if (process.env.VERCEL) {
+    throw new UploadError(
+      process.env.BLOB_STORE_ID
+        ? "Blob storage is connected over OIDC, but browser-direct uploads need a static token. " +
+          "Add BLOB_READ_WRITE_TOKEN to this project's environment variables and redeploy."
+        : "No file storage is configured on this deployment. Connect a Vercel Blob store and set BLOB_READ_WRITE_TOKEN.",
+    );
+  }
+
   const ext = assertExtension(file.name, kind);
   assertSize(file.size, kind);
 

@@ -142,9 +142,21 @@ tables once, from your machine:
 npx vercel env pull .env && npm run setup
 ```
 
-**2. Blob storage.** Storage → Create → Blob. It injects
-`BLOB_READ_WRITE_TOKEN`. Nothing else to configure — the app switches to
-browser-direct uploads as soon as that variable is present.
+**2. Blob storage.** Storage → Create → Blob, then connect it to the project.
+
+Connecting injects `BLOB_STORE_ID` and `BLOB_WEBHOOK_PUBLIC_KEY`, and the
+`@vercel/blob` SDK will happily authenticate with those over OIDC using the
+`VERCEL_OIDC_TOKEN` that Vercel supplies automatically. **That is not enough
+here.** OIDC covers a server-side `put()`, but `handleUpload` — the function
+that mints tokens for browser-direct uploads — reads only
+`BLOB_READ_WRITE_TOKEN` and has no OIDC fallback. Since every upload in this
+app is browser-direct (see below), you must add that variable by hand: open
+the Blob store, copy its read-write token, and add it under Settings →
+Environment Variables.
+
+Without it the app believes it is running locally, falls back to writing into
+`public/uploads`, and fails on Vercel's read-only filesystem. `saveUpload`
+detects that case and says so explicitly rather than surfacing an `EROFS`.
 
 **3. `AUTH_SECRET`.** Settings → Environment Variables. This one is *not*
 injected for you, and the app cannot start without it: the root layout reads
@@ -177,7 +189,8 @@ only and cannot run API routes, uploads or a database.
 | --- | --- | --- |
 | `DATABASE_URL` | Neon integration | Pooled Postgres connection, used at runtime. |
 | `DATABASE_URL_UNPOOLED` | Neon integration | Direct connection for `prisma db push`; DDL through a pooler is unreliable. |
-| `BLOB_READ_WRITE_TOKEN` | Blob integration | Presence of this switches uploads to browser-direct Blob. |
+| `BLOB_STORE_ID` | Blob integration | Identifies the store for OIDC auth. Not sufficient on its own. |
+| `BLOB_READ_WRITE_TOKEN` | **you** | Required for browser-direct uploads; `handleUpload` accepts no OIDC fallback. |
 | `AUTH_SECRET` | **you** | Signs the session JWT. Required — every page fails without it. |
 
 ---
