@@ -371,7 +371,7 @@ export function ListingForm({
             </div>
 
             <label className="btn-ghost w-full cursor-pointer">
-              {usdzUrl ? "Replace USDZ (iOS AR)" : "Add a USDZ for iOS AR (optional)"}
+              {usdzUrl ? "Replace USDZ override" : "Add a USDZ override (optional)"}
               <input
                 type="file"
                 accept=".usdz"
@@ -381,8 +381,9 @@ export function ListingForm({
               />
             </label>
             <p className="-mt-2 text-xs text-muted">
-              iPhones have no WebXR, so iOS AR needs a USDZ export of the same model. Without
-              one, iOS buyers still get the 3D preview.
+              iOS AR works without this: the buyer&rsquo;s phone builds a USDZ from your GLB
+              automatically, in their chosen colour and size. Upload one only if you want to
+              override that with your own export.
             </p>
 
             <label className="btn-ghost w-full cursor-pointer">

@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { XREstimatedLight } from "three/examples/jsm/webxr/XREstimatedLight.js";
 import { applyColor, loadModel, type LoadedModel } from "@/lib/three/model";
+import { QuickLookButton } from "./QuickLookButton";
 import {
   formatDimensions,
   formatPrice,
@@ -423,7 +424,14 @@ export function ArLauncher({ listing, color, size, onColorChange, onSizeChange }
         <div className="btn-ghost w-full py-3 opacity-60">Checking AR support…</div>
       )}
 
-      {support === "unsupported" && <QuickLookFallback listing={listing} />}
+      {support === "unsupported" && (
+        <QuickLookFallback
+          listing={listing}
+          colorHex={colorHex}
+          colorName={color.name}
+          sizeScale={size.scale}
+        />
+      )}
 
       {error && <p className="mt-2 text-sm text-bad">{error}</p>}
 
@@ -564,46 +572,45 @@ export function ArLauncher({ listing, color, size, onColorChange, onSizeChange }
 }
 
 /**
- * iOS Safari has no WebXR, so AR there means handing a .usdz to Quick Look.
- * That file is fixed at export time: Quick Look cannot re-tint it, so it only
- * appears when the seller supplied one, and the caveat is stated plainly.
+ * Everything that is not a WebXR browser. On iOS that still means real AR, via
+ * Quick Look and a USDZ generated in the browser; elsewhere it means saying so
+ * plainly and leaving the 3D viewer as the way to inspect the print.
  */
-function QuickLookFallback({ listing }: { listing: ListingDTO }) {
+function QuickLookFallback({
+  listing,
+  colorHex,
+  colorName,
+  sizeScale,
+}: {
+  listing: ListingDTO;
+  colorHex: string | null;
+  colorName: string;
+  sizeScale: number;
+}) {
+  // iPadOS reports itself as a Mac, so touch points are the giveaway.
   const isIOS =
     typeof navigator !== "undefined" &&
     (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 
-  if (isIOS && listing.usdzUrl) {
+  if (isIOS) {
     return (
-      <div>
-        <a rel="ar" href={listing.usdzUrl} className="btn-ar w-full py-3 text-base">
-          {/* Quick Look requires an <img> child to take over the anchor. */}
-          <img src={listing.posterUrl ?? "/ar-badge.svg"} alt="" className="h-0 w-0" />
-          View in your room
-        </a>
-        <p className="mt-2 text-xs text-muted">
-          Opens in iOS Quick Look. The colour and size you pick here are not carried
-          into Quick Look — it shows the seller&apos;s exported USDZ as-is.
-        </p>
-      </div>
+      <QuickLookButton
+        listing={listing}
+        colorHex={colorHex}
+        colorName={colorName}
+        sizeScale={sizeScale}
+      />
     );
   }
 
   return (
     <div className="rounded-xl border border-edge bg-panel-2 p-3 text-xs text-muted">
       <p className="mb-1 font-semibold text-text">AR is not available on this device</p>
-      {isIOS ? (
-        <p>
-          iOS needs a USDZ file for AR and this seller has not uploaded one. You can still
-          rotate and inspect the print above.
-        </p>
-      ) : (
-        <p>
-          Open this page on an Android phone in Chrome to place the print in your room.
-          On desktop you can still orbit the model above.
-        </p>
-      )}
+      <p>
+        Open this page on a phone to place the print in your room. On desktop you can still
+        orbit the model above.
+      </p>
     </div>
   );
 }

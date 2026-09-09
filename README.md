@@ -58,12 +58,32 @@ AR is split by platform, because the two platforms genuinely differ:
 | Platform | Mechanism | Place | Move / rotate | Live colour & size |
 | --- | --- | --- | --- | --- |
 | Android Chrome, and other WebXR browsers | **WebXR `immersive-ar`** rendered with three.js | Tap a detected surface | Yes — custom gestures | Yes, while the print is standing in the room |
-| iOS Safari | **AR Quick Look**, only if the seller uploaded a `.usdz` | Handled by iOS | Handled by iOS | No — Quick Look shows the exported file as-is |
+| iOS Safari / iPadOS | **AR Quick Look**, fed a USDZ generated in the browser | Handled by iOS | Handled by iOS | Yes — baked into the file before it opens |
 | Desktop / anything else | No AR | — | — | — |
 
 Everything except the iOS row is built in `src/components/ArLauncher.tsx`.
 
-**Why the split:** iOS Safari does not implement WebXR at all, and Quick Look needs a USDZ, which cannot be produced from a GLB in the browser. The seller form therefore accepts an optional USDZ upload, and the buyer-facing copy says plainly that Quick Look will not carry the chosen colour. Where a device has no AR at all, the 3D viewer stays fully usable and the UI explains why.
+**Why the split:** iOS Safari does not implement WebXR at all, so AR there can
+only mean Quick Look, which accepts nothing but USDZ. Rather than ask sellers to
+export one — and rather than run Apple's USD tooling server-side — the phone
+builds it itself with three.js's `USDZExporter`, from the same GLB the preview
+already loaded (`src/lib/three/usdz.ts`).
+
+Because the export happens *after* the colour and scale are applied, the buyer's
+actual selection is baked into the file. A seller-uploaded static USDZ could
+never do that. Two details make it work:
+
+- The file is built **before** the tap, debounced on colour/size changes. Quick
+  Look opens from a genuine activation of an `<a rel="ar">`, and a synthetic
+  click issued after an `await` has already lost the user gesture.
+- When a tint is applied, the base-colour texture is dropped. `USDZExporter`
+  wires that map straight into `diffuseColor` and ignores `material.color`, so
+  a textured model would otherwise open in Quick Look with the colour choice
+  silently discarded. Normal, roughness and AO maps are kept.
+
+A seller-uploaded USDZ is still honoured as a fallback if the export fails.
+Where a device has no AR at all, the 3D viewer stays fully usable and the UI
+explains why.
 
 ### Gestures once placed
 
@@ -105,9 +125,11 @@ src/
     ProductExperience.tsx       Buyer-side colour/size state
     ListingForm.tsx             Seller upload/edit form
     ModelThumb.tsx              Lazy fallback thumbnail
+    QuickLookButton.tsx         iOS AR entry point
   lib/
     three/model.ts              Loading, re-anchoring, measuring, tinting
     three/thumbnailer.ts        Shared single-context thumbnail renderer
+    three/usdz.ts               In-browser USDZ export for iOS Quick Look
     auth.ts                     JWT session cookie + bcrypt
     storage.ts                  Upload validation + local-disk driver
 prisma/
@@ -201,5 +223,4 @@ Scoped out deliberately, so it's clear what's missing rather than half-present:
 
 - **Payments and checkout.** Listings show a price; there is no cart or order flow.
 - **Reviews, messaging, seller payouts.**
-- **GLB → USDZ conversion.** Needs Apple's USD tooling server-side; sellers upload USDZ themselves.
 - **Image moderation or model virus scanning.** Uploads are validated by extension and size only.
