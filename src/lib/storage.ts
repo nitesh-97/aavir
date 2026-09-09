@@ -109,23 +109,30 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
  * read-only at runtime, so this would fail there with EROFS.
  */
 export async function saveUpload(file: File, kind: UploadKind): Promise<string> {
-  // Writing to disk on Vercel fails with EROFS. Say why, rather than letting a
-  // filesystem error surface from three frames down.
-  if (process.env.VERCEL) {
-    throw new UploadError(
-      process.env.BLOB_STORE_ID
-        ? "Blob storage is connected over OIDC, but browser-direct uploads need a static token. " +
-          "Add BLOB_READ_WRITE_TOKEN to this project's environment variables and redeploy."
-        : "No file storage is configured on this deployment. Connect a Vercel Blob store and set BLOB_READ_WRITE_TOKEN.",
-    );
-  }
-
   const ext = assertExtension(file.name, kind);
   assertSize(file.size, kind);
 
-  await mkdir(UPLOAD_DIR, { recursive: true });
   const filename = `${randomUUID()}${ext}`;
-  await writeFile(path.join(UPLOAD_DIR, filename), Buffer.from(await file.arrayBuffer()));
+
+  try {
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    await writeFile(path.join(UPLOAD_DIR, filename), Buffer.from(await file.arrayBuffer()));
+  } catch (caught) {
+    // A read-only filesystem means this is a serverless host, where uploads
+    // belong in Blob storage. Detected from the failure itself rather than from
+    // process.env.VERCEL, because `vercel env pull` writes that variable into
+    // a local .env and would make development look like production.
+    const code = (caught as NodeJS.ErrnoException)?.code;
+    if (code === "EROFS" || code === "EACCES" || code === "EPERM") {
+      throw new UploadError(
+        process.env.BLOB_STORE_ID
+          ? "Blob storage is connected over OIDC, but browser-direct uploads need a static token. " +
+            "Add BLOB_READ_WRITE_TOKEN to this project's environment variables and redeploy."
+          : "This host has a read-only filesystem. Connect a Vercel Blob store and set BLOB_READ_WRITE_TOKEN.",
+      );
+    }
+    throw caught;
+  }
 
   return `/uploads/${filename}`;
 }

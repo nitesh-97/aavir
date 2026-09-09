@@ -93,6 +93,33 @@ explains why.
 
 Pinch-to-zoom is deliberately **not** wired up. Size comes only from the seller's size options, which carry real centimetre figures — a free-scale gesture would quietly break the one promise the product makes. To add it anyway, give the placed group a user scale in `ArLauncher.tsx` and multiply it into the size effect.
 
+### What sellers can upload
+
+`.stl`, `.obj`, `.3mf`, `.glb`, `.gltf` — converted to glb **in the seller's
+browser** at upload time (`src/lib/three/convert.ts`), so only one format is
+ever stored and the preview, WebXR and USDZ paths all have a single thing to
+handle. No server-side conversion, no queue, no extra dependency: three.js
+already ships the loaders and `GLTFExporter`.
+
+STL is the important one, since it is what every slicer takes, and it happens to
+suit this app well. It carries no colour (irrelevant — colour is applied as a
+tint) and declares no units (already handled — the seller states the true
+height). STL and 3MF are read as millimetres, which is what printing tools work
+in; OBJ is left as authored.
+
+STL is also unindexed triangle soup, so conversion runs `mergeVertices`. That
+compares normals as well as positions, so coplanar duplicates collapse while
+genuinely sharp edges keep their split normals — a 36-vertex cube becomes 24,
+not a rounded blob. Source files may be up to 250 MB because the glb that comes
+out is much smaller; the 50 MB limit applies to the converted result.
+
+**CAD formats are deliberately not accepted.** STEP, IGES, SLDPRT and F3D are
+parametric B-rep surfaces rather than meshes, so converting means tessellating —
+which needs OpenCascade compiled to WASM, cannot be done at all for the
+proprietary ones, and hinges on a quality trade-off only the seller can judge.
+Their CAD tool exposes exactly that as an export dialog, and they already export
+STL in order to print. The upload error says so.
+
 ### True scale
 
 glTF units are metres by convention, but plenty of real exports arrive in millimetres or in arbitrary units. So scale is resolved in two steps:
@@ -130,6 +157,7 @@ src/
     three/model.ts              Loading, re-anchoring, measuring, tinting
     three/thumbnailer.ts        Shared single-context thumbnail renderer
     three/usdz.ts               In-browser USDZ export for iOS Quick Look
+    three/convert.ts            STL / OBJ / 3MF -> glb, in the browser
     auth.ts                     JWT session cookie + bcrypt
     storage.ts                  Upload validation + local-disk driver
 prisma/
@@ -223,4 +251,5 @@ Scoped out deliberately, so it's clear what's missing rather than half-present:
 
 - **Payments and checkout.** Listings show a price; there is no cart or order flow.
 - **Reviews, messaging, seller payouts.**
+- **CAD tessellation.** STEP/IGES/SLDPRT are rejected with guidance to export STL; see above.
 - **Image moderation or model virus scanning.** Uploads are validated by extension and size only.

@@ -6,6 +6,13 @@ import { upload } from "@vercel/blob/client";
 import { ModelPreview } from "./ModelPreview";
 import { CATEGORIES, MATERIALS, type ListingDTO } from "@/lib/types";
 import type { Dimensions } from "@/lib/three/model";
+import {
+  ACCEPTED_MODEL_EXTENSIONS,
+  ConversionError,
+  convertToGlb,
+  isAcceptedModel,
+  needsConversion,
+} from "@/lib/three/convert";
 import type { UploadKind, UploadMode } from "@/lib/storage";
 
 type ColorDraft = {
@@ -134,6 +141,7 @@ export function ListingForm({
   const [previewScale, setPreviewScale] = useState(1);
 
   const [uploading, setUploading] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,18 +153,48 @@ export function ListingForm({
   async function handleModelFile(file: File | undefined) {
     if (!file) return;
     setError(null);
+
+    if (!isAcceptedModel(file.name)) {
+      setError(
+        `Unsupported format. Upload ${ACCEPTED_MODEL_EXTENSIONS.join(", ")} — for CAD files, ` +
+          "export an STL from your CAD tool first.",
+      );
+      return;
+    }
+
+    const sourceName = file.name;
     setUploading(true);
     try {
-      const url = await uploadFile(file, "model", uploadMode);
+      // STL/OBJ/3MF are converted here, in the browser, so only glb is ever
+      // stored and everything downstream has one format to handle.
+      let payload = file;
+      if (needsConversion(sourceName)) {
+        setConverting(true);
+        try {
+          payload = await convertToGlb(file);
+        } finally {
+          setConverting(false);
+        }
+      }
+
+      const url = await uploadFile(payload, "model", uploadMode);
       setModelUrl(url);
-      setModelName(file.name);
-      if (!title) setTitle(file.name.replace(/\.(glb|gltf)$/i, "").replace(/[-_]/g, " "));
+      setModelName(sourceName);
+      if (!title) {
+        setTitle(
+          sourceName.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim(),
+        );
+      }
       // A replaced model invalidates the old thumbnail and measurements.
       setPosterUrl("");
       setMeasured(null);
       setTrueHeight("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Upload failed.");
+      setError(
+        caught instanceof ConversionError || caught instanceof Error
+          ? caught.message
+          : "Upload failed.",
+      );
     } finally {
       setUploading(false);
     }
@@ -318,12 +356,18 @@ export function ListingForm({
             <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-3 border-2 border-dashed border-edge p-8 text-center transition hover:border-brand">
               <span className="text-4xl opacity-40">◈</span>
               <span className="font-semibold">
-                {uploading ? "Uploading…" : "Drop a GLB or glTF here"}
+                {converting
+                  ? "Converting to glb…"
+                  : uploading
+                    ? "Uploading…"
+                    : "Drop your model here"}
               </span>
-              <span className="text-xs text-muted">Up to 50 MB</span>
+              <span className="text-xs text-muted">
+                STL, OBJ, 3MF, GLB or glTF · up to 50 MB after conversion
+              </span>
               <input
                 type="file"
-                accept=".glb,.gltf"
+                accept={ACCEPTED_MODEL_EXTENSIONS.join(",")}
                 hidden
                 disabled={uploading}
                 onChange={(e) => handleModelFile(e.target.files?.[0])}
@@ -390,7 +434,7 @@ export function ListingForm({
               Replace 3D model
               <input
                 type="file"
-                accept=".glb,.gltf"
+                accept={ACCEPTED_MODEL_EXTENSIONS.join(",")}
                 hidden
                 disabled={uploading}
                 onChange={(e) => handleModelFile(e.target.files?.[0])}
