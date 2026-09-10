@@ -120,6 +120,41 @@ proprietary ones, and hinges on a quality trade-off only the seller can judge.
 Their CAD tool exposes exactly that as an export dialog, and they already export
 STL in order to print. The upload error says so.
 
+### Upload checks and seller guidance
+
+An untextured STL is not the only way a listing goes wrong. The commonest is a
+**printer build plate** — several copies or parts arranged for the bed, which is
+what a seller has open in their slicer, but which AR then drops into the buyer's
+room as a metre-wide arrangement rather than one product.
+
+`src/lib/three/inspect.ts` detects that at upload time and warns, without
+blocking. It splits the model into connected bodies rather than counting meshes,
+because after an STL round-trip a plate is frequently one mesh holding several
+disconnected shells with no object boundaries left to count. Vertices are welded
+by quantised position first — an STL stores every triangle independently, so
+without welding every triangle looks like its own body.
+
+The signal that actually discriminates is **footprint dominance**, not part
+count. A plate is several bodies where none covers much of the footprint; a
+genuine assembly has one part that does. Measured against real models:
+
+| Model | Parts | Largest part's share of footprint | Flagged |
+| --- | --- | --- | --- |
+| Build plate of figures | 15 | 0.24 | **yes** |
+| BoomBox | 14 | 1.00 | no |
+| Lantern (post, lamp, shade) | 3 | 1.00 | no |
+| Avocado | 2 | 0.79 | no |
+
+BoomBox is the case that matters: it has more parts than the plate, and a
+part-count rule would flag it. Requiring three parts additionally keeps
+two-piece products — a box and its lid — out of it.
+
+`src/components/ExportTips.tsx` carries the rest as guidance in the upload form:
+export one model rather than a plate, orient it upright, use a fine tessellation
+when exporting STL from CAD (0.01–0.05 mm deviation), and prefer GLB from
+Blender when the model has materials worth keeping, since STL and OBJ carry
+geometry alone.
+
 ### True scale
 
 glTF units are metres by convention, but plenty of real exports arrive in millimetres or in arbitrary units. So scale is resolved in two steps:
@@ -153,11 +188,13 @@ src/
     ListingForm.tsx             Seller upload/edit form
     ModelThumb.tsx              Lazy fallback thumbnail
     QuickLookButton.tsx         iOS AR entry point
+    ExportTips.tsx              Seller export guidance
   lib/
     three/model.ts              Loading, re-anchoring, measuring, tinting
     three/thumbnailer.ts        Shared single-context thumbnail renderer
     three/usdz.ts               In-browser USDZ export for iOS Quick Look
     three/convert.ts            STL / OBJ / 3MF -> glb, in the browser
+    three/inspect.ts            Build-plate detection via connected components
     three/finishes.ts           Per-material PBR surface finishes
     auth.ts                     JWT session cookie + bcrypt
     storage.ts                  Upload validation + local-disk driver

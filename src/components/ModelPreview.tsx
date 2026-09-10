@@ -10,6 +10,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { applyColor, loadModel, type Dimensions, type LoadedModel } from "@/lib/three/model";
 import { finishFor } from "@/lib/three/finishes";
+import { analyseModel, type ModelReport } from "@/lib/three/inspect";
 
 type Props = {
   src: string;
@@ -35,6 +36,12 @@ type Props = {
   className?: string;
   onMeasured?: (sizeCm: Dimensions) => void;
   /**
+   * Reports what the file actually contains — part count, footprint, whether it
+   * looks like a build plate. Only run when a caller asks, since the component
+   * analysis is wasted work on a buyer-facing product page.
+   */
+  onInspected?: (report: ModelReport | null) => void;
+  /**
    * Filled with a function that renders one frame and returns it as a PNG data
    * URL — used by the seller form to generate a listing thumbnail without
    * asking for a separate upload.
@@ -52,6 +59,7 @@ export function ModelPreview({
   ambientOcclusion = true,
   className,
   onMeasured,
+  onInspected,
   captureRef,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,6 +74,8 @@ export function ModelPreview({
   // onMeasured is usually an inline arrow, so keep it out of effect deps.
   const onMeasuredRef = useRef(onMeasured);
   onMeasuredRef.current = onMeasured;
+  const onInspectedRef = useRef(onInspected);
+  onInspectedRef.current = onInspected;
 
   // ---- Scene setup: runs once for the lifetime of the canvas. ----
   useEffect(() => {
@@ -246,6 +256,14 @@ export function ModelPreview({
         scene.add(model.object);
         frameRef.current?.(model.sizeM, frameScale ?? scale);
         onMeasuredRef.current?.(model.sizeCm);
+        if (onInspectedRef.current) {
+          try {
+            onInspectedRef.current(analyseModel(model.object));
+          } catch (caught) {
+            console.error(caught);
+            onInspectedRef.current(null);
+          }
+        }
         setStatus("ready");
       })
       .catch((error: unknown) => {

@@ -4,8 +4,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { ModelPreview } from "./ModelPreview";
+import { ExportTips } from "./ExportTips";
 import { CATEGORIES, MATERIALS, type ListingDTO } from "@/lib/types";
 import type { Dimensions } from "@/lib/three/model";
+import type { ModelReport } from "@/lib/three/inspect";
 import {
   ACCEPTED_MODEL_EXTENSIONS,
   ConversionError,
@@ -154,6 +156,7 @@ export function ListingForm({
       }
     : null;
 
+  const [report, setReport] = useState<ModelReport | null>(null);
   const [previewColorKey, setPreviewColorKey] = useState<string | null>(null);
   const [previewScale, setPreviewScale] = useState(1);
 
@@ -206,6 +209,7 @@ export function ListingForm({
       setPosterUrl("");
       setMeasured(null);
       setTrueHeight("");
+      setReport(null);
     } catch (caught) {
       setError(
         caught instanceof ConversionError || caught instanceof Error
@@ -336,6 +340,7 @@ export function ListingForm({
                 frameScale={correction * frameScale}
                 captureRef={captureRef}
                 className="aspect-square w-full"
+                onInspected={setReport}
                 onMeasured={(sizeCm) => {
                   setMeasured(sizeCm);
                   // A fresh model proposes its own height; the seller can correct it.
@@ -344,6 +349,20 @@ export function ListingForm({
               />
               <div className="space-y-3 border-t border-edge p-3">
                 <p className="truncate text-xs text-muted">{modelName}</p>
+
+                {report?.plateLike && (
+                  <div className="rounded-lg border border-bad/40 bg-bad/10 p-3">
+                    <p className="text-xs font-semibold text-bad">
+                      This looks like a printer build plate
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      The file holds {report.parts} separate parts laid out side by side across{" "}
+                      {report.footprintCm.width} × {report.footprintCm.depth} cm. Buyers will see
+                      the whole arrangement placed in their room, not one product. Export a single
+                      model instead — see the export tips below.
+                    </p>
+                  </div>
+                )}
 
                 {measured && (
                   <div>
@@ -393,6 +412,8 @@ export function ListingForm({
             </label>
           )}
         </div>
+
+        {!modelUrl && <ExportTips />}
 
         {modelUrl && (
           <>
@@ -447,6 +468,8 @@ export function ListingForm({
               automatically, in their chosen colour and size. Upload one only if you want to
               override that with your own export.
             </p>
+
+            <ExportTips />
 
             <label className="btn-ghost w-full cursor-pointer">
               Replace 3D model
